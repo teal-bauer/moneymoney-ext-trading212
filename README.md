@@ -6,12 +6,9 @@ Get a Trading 212 API key: https://helpcentre.trading212.com/hc/en-us/articles/1
 
 The key needs all read scopes.
 
-Add an account of type "Trading 212" in MoneyMoney, log in with any username and the API key as password.
+Add an account of type "Trading 212" in MoneyMoney, enter your API key as your username and anything as password.
+If you have a new enough version of MoneyMoney, it will ask for the API key directly.
 
 ### Caveats
 
-There is very little error handling. If things fail, double check your API key, and try again.
-
-Currency handling is not 100% right due to limitations in the Trading 212 API. Especially Pies are returning confusing values sometimes. I'm looking for workarounds.
-
-Pies should probably be modelled as separate accounts with their own portfolios.
+Pies are currently broken due to an error in the Trading 212 API.
