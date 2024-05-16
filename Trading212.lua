@@ -20,16 +20,14 @@
 --
 
 WebBanking{
-  version     = 0.2,
+  version     = 0.3,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
 }
 
 local connection = Connection()
-local currency
 local api_key
-local instruments
 
 -- Helpers
 
@@ -44,6 +42,17 @@ function dump(o)
   else
     return tostring(o)
   end
+end
+
+function split(str, sep)
+  if sep == nil then
+    sep = "%s"
+  end
+  local substrings = {}
+  for substring in string.gmatch(str, "([^"..sep.."]+)") do
+    table.insert(substrings, substring)
+  end
+  return substrings
 end
 
 function IsotimeToUnixtime(dateStr)
@@ -68,19 +77,22 @@ function IsotimeToUnixtime(dateStr)
 end
 
 -- Memoization
-function Cached(key, ttl, updateFunction)
-  if not LocalStorage[key] then
-    LocalStorage[key] = {}
+function Cached(key, ttl, updateFunction, ...)
+  if not LocalStorage[api_key] then
+    LocalStorage[api_key] = {}
+  end
+  if not LocalStorage[api_key][key] then
+    LocalStorage[api_key][key] = {}
   end
 
-  local cacheEntry = LocalStorage[key]
+  local cacheEntry = LocalStorage[api_key][key]
   local cachedData = cacheEntry.data
   local expirationTime = cacheEntry.expires_at
   if cachedData and expirationTime and os.time() < expirationTime then
     return cachedData
   end
 
-  local updatedData = updateFunction()
+  local updatedData = updateFunction(...)
 
   cacheEntry.data = updatedData
   cacheEntry.expires_at = os.time() + ttl
@@ -91,18 +103,24 @@ end
 function CleanupCache()
   local currentTime = os.time()
 
-  for key, cacheEntry in pairs(LocalStorage) do
-    print("Cleanup - Checking key: " .. key)
-    if type(cacheEntry) == "table" and (cacheEntry.expires_at and currentTime >= cacheEntry.expires_at) or (not cacheEntry.expires_at) then
-      print("Expiring key " .. key)
-      LocalStorage[key] = nil
+  for api_key, scoped_cache in pairs(LocalStorage) do    
+    print("Cleanup - Checking API key: " .. api_key)
+    for key, cacheEntry in pairs(scoped_cache) do
+      print("Cleanup - Checking key: " .. key)
+      if type(cacheEntry) == "table" and ((cacheEntry.expires_at and currentTime >= cacheEntry.expires_at) or (not cacheEntry.expires_at)) then
+        print("Expiring key " .. key)
+        LocalStorage[api_key][key] = nil
+      end
+    end
+    if scoped_cache == {} then
+      LocalStorage[api_key] = nil
     end
   end
 end
 
--- API wrapper
+-- API wrapper with exponential backoff
 function ApiRequest(url)
-  local max_attempts = 4
+  local max_attempts = 5
   local initial_delay = 5
   local response
 
@@ -122,6 +140,8 @@ function ApiRequest(url)
     response = JSON(content):dictionary()
     if response["error"] == 401 then
       error(LoginFailed)
+    elseif response["error"] == 403 then
+      error("Your API key does not have the correct scope(s) for this request @ " .. url)
     elseif response["code"] == "InternalError" then
       error("Internal server error, please try again later")
     elseif response["code"] == "BusinessException" and response["context"]["type"] == "TooManyRequests" then
@@ -136,7 +156,7 @@ function ApiRequest(url)
 end
 
 -- Data fetching methods
-function RefreshInstruments()
+function FetchInstruments()
   local instruments_response = ApiRequest("https://live.trading212.com/api/v0/equity/metadata/instruments")
   local instruments_tbl = {}
   for k, v in pairs(instruments_response) do
@@ -145,12 +165,13 @@ function RefreshInstruments()
   return instruments_tbl
 end
 
-function RefreshAccountInfo()
+function FetchAccountInfo()
   return ApiRequest("https://live.trading212.com/api/v0/equity/account/info")
 end
 
-function RefreshPortfolio()
+function FetchPortfolio()
   local response = ApiRequest("https://live.trading212.com/api/v0/equity/portfolio")
+  local instruments = Cached("instruments", 86400, FetchInstruments)
   local securities = {}
   for k, v in pairs(response) do
     local instr = instruments[v["ticker"]]
@@ -197,12 +218,17 @@ function RefreshPortfolio()
   return securities
 end
 
-function RefreshAccountCash()
+function FetchAccountCash()
   return ApiRequest("https://live.trading212.com/api/v0/equity/account/cash")
 end
 
-function RefreshPies()
+function FetchPies()
+  -- XXX This API is currently broken server-side
   return ApiRequest("https://live.trading212.com/api/v0/equity/pies")
+end
+
+function FetchPie(pie_id)
+  return ApiRequest("https://live.trading212.com/api/v0/equity/pies/" .. tostring(pie_id))
 end
 
 -- WebBanking API impl
@@ -217,78 +243,93 @@ function InitializeSession(protocol, bankCode, username, reserved, password)
   MM.printStatus("Cleaning up local cache")
   CleanupCache()
 
-  MM.printStatus("Getting instrument list")
-  instruments = Cached("instruments", 86400, RefreshInstruments)
-
   MM.printStatus("Getting account information")
-  currency = Cached("account_info", 86400, RefreshAccountInfo)["currencyCode"]
+  Cached("account_info", 86400, FetchAccountInfo)
+
+  MM.printStatus("Getting available instruments")
+  Cached("instruments", 86400, FetchInstruments)
 
   return nil
 end
 
 function ListAccounts(knownAccounts)
   MM.printStatus("Fetching accounts")
-  -- Return array of accounts.
-  local cashAccount = {
-    name = "Trading 212 Cash",
-    accountNumber = "Trading 212 Cash",
-    currency = currency,
-    type = AccountTypeSavings
-  }
-  local portfolioAccount = {
-    name = "Trading 212 Portfolio",
-    accountNumber = "Trading 212 Portfolio",
-    currency = currency,
-    type = AccountTypePortfolio,
-    portfolio = true
-  }
-  local piesAccount = {
-    name = "Trading 212 Pies",
-    accountNumber = "Trading 212 Pies",
-    currency = currency,
-    type = AccountTypePortfolio,
-    portfolio = true
+  local account_info = Cached("account_info", 86400, FetchAccountInfo)
+  local acct_no = tostring(account_info["id"])
+  local accounts = {
+    {
+      name = "Trading 212 Cash",
+      accountNumber = acct_no,
+      subAccount = "CASH",
+      currency = account_info["currencyCode"],
+      type = AccountTypeSavings
+    },
+    {
+      name = "Trading 212 Portfolio",
+      accountNumber = acct_no,
+      subAccount = "PORTFOLIO",
+      currency = account_info["currencyCode"],
+      type = AccountTypePortfolio,
+      portfolio = true
+    }
   }
 
-  return { cashAccount, portfolioAccount, piesAccount }
+  local pies = Cached("pies", 60, FetchPies)
+  for k, v in pairs(pies) do
+    local pie_detail = Cached("pie_" .. tostring(v["id"]), 60, FetchPie, v["id"])
+    print(dump(pie_detail["settings"]))
+    local piesAccount = {
+      name = "Trading 212 Pie - " .. pie_detail["settings"]["name"],
+      accountNumber = acct_no,
+      subAccount = "PIE_ " .. tostring(v["id"]),
+      currency = account_info["currencyCode"],
+      type = AccountTypePortfolio,
+      portfolio = true
+    }
+    table.insert(accounts, piesAccount)
+  end
+
+  return accounts
 end
 
 function RefreshAccount(account, since)
-  MM.printStatus("Refreshing account " .. account["accountNumber"])
+  MM.printStatus("Refreshing account " .. account["accountNumber"] .. " " .. account["subAccount"])
 
   -- Free cash - TODO: Add withdrawals / investments
-  if account["accountNumber"] == "Trading 212 Cash" then
-    local cash_info = Cached("account_cash", 10, RefreshAccountCash)
-    return { balance = cash_info["free"], transactions = {} }
+  if account["subAccount"] == "CASH" then
+    local account_cash = Cached("account_cash", 10, FetchAccountCash)
+    return { balance = account_cash["free"], transactions = {} }
   end
 
   -- Main portfolio
-  if account["accountNumber"] == "Trading 212 Portfolio" then
+  if account["subAccount"] == "PORTFOLIO" then
     MM.printStatus("Fetching Portfolio")
-    local portfolio = RefreshPortfolio()
+    local portfolio = Cached("portfolio", 60, FetchPortfolio)
     return { securities = portfolio }
   end
 
   -- Pies
-  if account["accountNumber"] == "Trading 212 Pies" then
-    MM.printStatus("Fetching pies")
-    local pies = Cached("pies", 60, RefreshPies)
-    local pie_values = {}
-    for k, v in pairs(pies) do
-      print(dump(v))
-      MM.printStatus("Getting info for pie " .. v["id"])
-      local pie_info = ApiRequest("https://live.trading212.com/api/v0/equity/pies/" .. v["id"])
-      table.insert(pie_values, {
-        name = pie_info["settings"]["name"],
-        quantity = 1,
-        amount = v["result"]["value"],
-        purchasePrice = v["result"]["investedValue"],
-      })
-    end
+  if account["subAccount"]:sub(1,3) == "PIE" then
+    local pie_id = account["subAccount"].sub(5)
+    print(pie_id)
+    return { securities = {} }
+    -- MM.printStatus("Fetching pies")
+    -- local pies = Cached("pies", 60, FetchPies)
+    -- local pie_values = {}
+    -- for k, v in pairs(pies) do
+    --   MM.printStatus("Getting info for pie " .. v["id"])
+    --   local pie_detail = Cached("pie_" .. tostring(v["id"]), 60, FetchPie, v["id"])
+    --   table.insert(pie_values, {
+    --     name = pie_detail["settings"]["name"],
+    --     quantity = 1,
+    --     amount = v["result"]["value"],
+    --     purchasePrice = v["result"]["investedValue"],
+    --   })
+    -- end
 
-    return {
-      securities = pie_values
-    }
+    -- return {
+    --   securities = pie_values
+    -- }
   end
 end
 
