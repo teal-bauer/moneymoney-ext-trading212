@@ -11,4 +11,4 @@ If you have a new enough version of MoneyMoney, it will ask for the API key dire
 
 ### Caveats
 
-Pies are currently broken due to an error in the Trading 212 API.
+Some values might not be congruent to what the mobile app shows you, either due to data staleness or due to weird currency handling. I haven't found a good way to handle this correctly; the T212 API is just weird in this regard. If you have an idea on how to handle this better, PRs are welcome.
