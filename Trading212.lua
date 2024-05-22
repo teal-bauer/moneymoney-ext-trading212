@@ -20,7 +20,7 @@
 --
 
 WebBanking{
-  version     = 0.3,
+  version     = 0.31,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
@@ -108,11 +108,12 @@ function CleanupCache()
     for key, cacheEntry in pairs(scoped_cache) do
       print("Cleanup - Checking key: " .. key)
       if type(cacheEntry) == "table" and ((cacheEntry.expires_at and currentTime >= cacheEntry.expires_at) or (not cacheEntry.expires_at)) then
-        print("Expiring key " .. key)
+        print("Cleanup - Expiring key: " .. key)
         LocalStorage[api_key][key] = nil
       end
     end
-    if scoped_cache == {} then
+    if LocalStorage[api_key] == {} then
+      print("Cleanup - Expiring API key " .. api_key)
       LocalStorage[api_key] = nil
     end
   end
@@ -223,12 +224,95 @@ function FetchAccountCash()
 end
 
 function FetchPies()
-  -- XXX This API is currently broken server-side
+  -- [
+  --   {
+  --     "cash": 0,
+  --     "dividendDetails": {
+  --       "gained": 0,
+  --       "inCash": 0,
+  --       "reinvested": 0
+  --     },
+  --     "id": 0,
+  --     "progress": 0.5,
+  --     "result": {
+  --       "investedValue": 0,
+  --       "result": 0,
+  --       "resultCoef": 0,
+  --       "value": 0
+  --     },
+  --     "status": "AHEAD"
+  --   }
+  -- ]
   return ApiRequest("https://live.trading212.com/api/v0/equity/pies")
 end
 
 function FetchPie(pie_id)
+  -- {
+  --   "instruments": [
+  --     {
+  --       "currentShare": 0,
+  --       "expectedShare": 0,
+  --       "issues": [
+  --         {
+  --           "name": "DELISTED",
+  --           "severity": "IRREVERSIBLE"
+  --         }
+  --       ],
+  --       "ownedQuantity": 0,
+  --       "result": {
+  --         "investedValue": 0,
+  --         "result": 0,
+  --         "resultCoef": 0,
+  --         "value": 0
+  --       },
+  --       "ticker": "string"
+  --     }
+  --   ],
+  --   "settings": {
+  --     "creationDate": "2019-08-24T14:15:22Z",
+  --     "dividendCashAction": "REINVEST",
+  --     "endDate": "2019-08-24T14:15:22Z",
+  --     "goal": 0,
+  --     "icon": "Home",
+  --     "id": 0,
+  --     "initialInvestment": 0,
+  --     "instrumentShares": {
+  --       "property1": 0,
+  --       "property2": 0
+  --     },
+  --     "name": "string",
+  --     "pubicUrl": "string"
+  --   }
+  -- }
   return ApiRequest("https://live.trading212.com/api/v0/equity/pies/" .. tostring(pie_id))
+end
+
+function PieToPortfolio(pie_info)
+  local instruments = Cached("instruments", 86400, FetchInstruments)
+  -- local portfolio = Cached("portfolio", 60, FetchPortfolio)
+  local securities = {}
+  for k, v in pairs(pie_info["instruments"]) do
+    local instr = instruments[v["ticker"]]
+    table.insert(
+      securities,
+      {
+        name = instr["name"],
+        isin = instr["isin"],
+        quantity = v["ownedQuantity"],
+        -- currencyOfQuantity = nil,
+        -- purchasePrice = v["averagePrice"],
+        -- currencyOfPurchasePrice = instr["currencyCode"],
+        -- price = v["currentPrice"],
+        -- currencyOfPrice = instr["currencyCode"],
+        amount = v["result"]["value"],
+        originalAmount = v["result"]["investedValue"],
+        -- currencyOfOriginalAmount = instr["currencyCode"],
+        -- tradeTimestamp = IsotimeToUnixtime(v["initialFillDate"]),
+      }
+    )
+  end
+
+  return securities
 end
 
 -- WebBanking API impl
@@ -258,14 +342,14 @@ function ListAccounts(knownAccounts)
   local acct_no = tostring(account_info["id"])
   local accounts = {
     {
-      name = "Trading 212 Cash",
+      name = "Cash",
       accountNumber = acct_no,
       subAccount = "CASH",
       currency = account_info["currencyCode"],
       type = AccountTypeSavings
     },
     {
-      name = "Trading 212 Portfolio",
+      name = "Portfolio",
       accountNumber = acct_no,
       subAccount = "PORTFOLIO",
       currency = account_info["currencyCode"],
@@ -276,12 +360,13 @@ function ListAccounts(knownAccounts)
 
   local pies = Cached("pies", 60, FetchPies)
   for k, v in pairs(pies) do
+    MM.sleep(2)
     local pie_detail = Cached("pie_" .. tostring(v["id"]), 60, FetchPie, v["id"])
     print(dump(pie_detail["settings"]))
     local piesAccount = {
-      name = "Trading 212 Pie - " .. pie_detail["settings"]["name"],
+      name = "Pie " .. pie_detail["settings"]["name"],
       accountNumber = acct_no,
-      subAccount = "PIE_ " .. tostring(v["id"]),
+      subAccount = "PIE_" .. tostring(v["id"]),
       currency = account_info["currencyCode"],
       type = AccountTypePortfolio,
       portfolio = true
@@ -293,7 +378,7 @@ function ListAccounts(knownAccounts)
 end
 
 function RefreshAccount(account, since)
-  MM.printStatus("Refreshing account " .. account["accountNumber"] .. " " .. account["subAccount"])
+  MM.printStatus("Refreshing account " .. account["accountNumber"] .. "/" .. account["subAccount"])
 
   -- Free cash - TODO: Add withdrawals / investments
   if account["subAccount"] == "CASH" then
@@ -310,27 +395,13 @@ function RefreshAccount(account, since)
 
   -- Pies
   if account["subAccount"]:sub(1,3) == "PIE" then
-    local pie_id = account["subAccount"].sub(5)
-    print(pie_id)
-    return { securities = {} }
-    -- MM.printStatus("Fetching pies")
-    -- local pies = Cached("pies", 60, FetchPies)
-    -- local pie_values = {}
-    -- for k, v in pairs(pies) do
-    --   MM.printStatus("Getting info for pie " .. v["id"])
-    --   local pie_detail = Cached("pie_" .. tostring(v["id"]), 60, FetchPie, v["id"])
-    --   table.insert(pie_values, {
-    --     name = pie_detail["settings"]["name"],
-    --     quantity = 1,
-    --     amount = v["result"]["value"],
-    --     purchasePrice = v["result"]["investedValue"],
-    --   })
-    -- end
-
-    -- return {
-    --   securities = pie_values
-    -- }
+    local pie_id = account["subAccount"]:sub(5, #account["subAccount"])
+    local pie_detail = Cached("pie_" .. pie_id, 60, FetchPie, pie_id)
+    local pie_as_portfolio = PieToPortfolio(pie_detail)
+    return { securities = pie_as_portfolio }
   end
+
+  return nil
 end
 
 function EndSession()
