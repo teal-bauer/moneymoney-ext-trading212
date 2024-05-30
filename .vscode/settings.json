@@ -1,0 +1,13 @@
+{
+  "Lua.diagnostics.globals": [
+    "ProtocolWebBanking",
+    "Connection",
+    "JSON",
+    "MM",
+    "WebBanking",
+    "LoginFailed",
+    "AccountTypeSavings",
+    "AccountTypePortfolio",
+    "LocalStorage"
+  ]
+}
