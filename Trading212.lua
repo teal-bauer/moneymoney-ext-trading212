@@ -103,7 +103,7 @@ end
 function CleanupCache()
   local currentTime = os.time()
 
-  for api_key, scoped_cache in pairs(LocalStorage) do    
+  for api_key, scoped_cache in pairs(LocalStorage) do
     print("Cleanup - Checking API key: " .. api_key)
     for key, cacheEntry in pairs(scoped_cache) do
       print("Cleanup - Checking key: " .. key)
@@ -407,3 +407,5 @@ end
 function EndSession()
   -- Logout - nothing to do.
 end
+
+-- SIGNATURE: MCwCFECsBiVxvZZddOKACvZgjMgGYwWBAhQvIt29L3MhiL5+RAFwfoMLwr7V5w==
