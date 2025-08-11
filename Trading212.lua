@@ -304,8 +304,8 @@ function PieToPortfolio(pie_info)
         -- currencyOfPurchasePrice = instr["currencyCode"],
         -- price = v["currentPrice"],
         -- currencyOfPrice = instr["currencyCode"],
-        amount = v["result"]["value"],
-        originalAmount = v["result"]["investedValue"],
+        amount = v["result"]["priceAvgValue"],
+        originalAmount = v["result"]["priceAvgInvestedValue"],
         -- currencyOfOriginalAmount = instr["currencyCode"],
         -- tradeTimestamp = IsotimeToUnixtime(v["initialFillDate"]),
       }
