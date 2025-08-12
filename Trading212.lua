@@ -4,7 +4,7 @@
 --
 
 --
--- Copyright 2024 Teal Bauer <opensource+mm-t212@teal.is>
+-- Copyright 2024, 2025 Teal Bauer <opensource+mm-t212@teal.is>
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
 -- you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 --
 
 WebBanking{
-  version     = 0.31,
+  version     = 0.32,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
