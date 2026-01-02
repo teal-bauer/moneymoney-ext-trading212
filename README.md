@@ -12,4 +12,6 @@ Add an account of type "Trading 212" in MoneyMoney:
 
 ### Caveats
 
-Some values might not be congruent to what the mobile app shows you, either due to data staleness or due to weird currency handling. I haven't found a good way to handle this correctly; the T212 API is just weird in this regard. If you have an idea on how to handle this better, PRs are welcome.
+**Currency conversion:** If you hold securities in currencies different from your account currency (e.g., US stocks in a EUR account), values may differ slightly from the Trading 212 app. The API provides prices in the instrument's native currency but doesn't include exchange rates, so MoneyMoney uses its own rates which may not match Trading 212's exactly.
+
+**Data freshness:** Portfolio data is cached briefly to avoid API rate limits, so values may lag behind real-time prices by a minute or two.
