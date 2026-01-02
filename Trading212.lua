@@ -20,7 +20,7 @@
 --
 
 WebBanking{
-  version     = 0.40,
+  version     = 0.41,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
@@ -58,17 +58,6 @@ function dump(o)
   else
     return tostring(o)
   end
-end
-
-function split(str, sep)
-  if sep == nil then
-    sep = "%s"
-  end
-  local substrings = {}
-  for substring in string.gmatch(str, "([^"..sep.."]+)") do
-    table.insert(substrings, substring)
-  end
-  return substrings
 end
 
 function IsotimeToUnixtime(dateStr)
@@ -128,7 +117,7 @@ function CleanupCache()
         LocalStorage[api_key][key] = nil
       end
     end
-    if LocalStorage[api_key] == {} then
+    if next(LocalStorage[api_key]) == nil then
       print("Cleanup - Expiring API key " .. api_key)
       LocalStorage[api_key] = nil
     end
@@ -161,7 +150,7 @@ function ApiRequest(url)
       error("Your API key does not have the correct scope(s) for this request @ " .. url)
     elseif response["code"] == "InternalError" then
       error("Internal server error, please try again later")
-    elseif response["code"] == "BusinessException" and response["context"]["type"] == "TooManyRequests" then
+    elseif response["code"] == "BusinessException" and response["context"] and response["context"]["type"] == "TooManyRequests" then
       -- do nothing, restart loop
     else
       return response
@@ -305,7 +294,6 @@ end
 
 function PieToPortfolio(pie_info)
   local instruments = Cached("instruments", 86400, FetchInstruments)
-  -- local portfolio = Cached("portfolio", 60, FetchPortfolio)
   local securities = {}
   for k, v in pairs(pie_info["instruments"]) do
     local instr = instruments[v["ticker"]]
@@ -315,15 +303,9 @@ function PieToPortfolio(pie_info)
         name = instr["name"],
         isin = instr["isin"],
         quantity = v["ownedQuantity"],
-        -- currencyOfQuantity = nil,
-        -- purchasePrice = v["averagePrice"],
-        -- currencyOfPurchasePrice = instr["currencyCode"],
-        -- price = v["currentPrice"],
-        -- currencyOfPrice = instr["currencyCode"],
         amount = v["result"]["priceAvgValue"],
         originalAmount = v["result"]["priceAvgInvestedValue"],
-        -- currencyOfOriginalAmount = instr["currencyCode"],
-        -- tradeTimestamp = IsotimeToUnixtime(v["initialFillDate"]),
+        currencyOfOriginalAmount = instr["currencyCode"],
       }
     )
   end
