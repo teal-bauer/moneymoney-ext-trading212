@@ -20,14 +20,30 @@
 --
 
 WebBanking{
-  version     = 0.32,
+  version     = 0.40,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
 }
 
 local connection = Connection()
-local api_key
+local auth_header
+
+-- Base64 encoding for Basic Auth
+local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+function base64encode(data)
+  return ((data:gsub('.', function(x)
+    local r, b = '', x:byte()
+    for i = 8, 1, -1 do r = r .. (b % 2 ^ i - b % 2 ^ (i - 1) > 0 and '1' or '0') end
+    return r
+  end) .. '0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+    if #x < 6 then return '' end
+    local c = 0
+    for i = 1, 6 do c = c + (x:sub(i, i) == '1' and 2 ^ (6 - i) or 0) end
+    return b64chars:sub(c + 1, c + 1)
+  end) .. ({ '', '==', '=' })[#data % 3 + 1])
+end
 
 -- Helpers
 
@@ -78,14 +94,14 @@ end
 
 -- Memoization
 function Cached(key, ttl, updateFunction, ...)
-  if not LocalStorage[api_key] then
-    LocalStorage[api_key] = {}
+  if not LocalStorage[auth_header] then
+    LocalStorage[auth_header] = {}
   end
-  if not LocalStorage[api_key][key] then
-    LocalStorage[api_key][key] = {}
+  if not LocalStorage[auth_header][key] then
+    LocalStorage[auth_header][key] = {}
   end
 
-  local cacheEntry = LocalStorage[api_key][key]
+  local cacheEntry = LocalStorage[auth_header][key]
   local cachedData = cacheEntry.data
   local expirationTime = cacheEntry.expires_at
   if cachedData and expirationTime and os.time() < expirationTime then
@@ -135,7 +151,7 @@ function ApiRequest(url)
       "GET", url, "", "",
       {
         Accept = "application/json",
-        Authorization = api_key,
+        Authorization = auth_header,
       }
     )
     response = JSON(content):dictionary()
@@ -322,7 +338,9 @@ function SupportsBank(protocol, bankCode)
 end
 
 function InitializeSession(protocol, bankCode, username, reserved, password)
-  api_key = username
+  -- Trading212 API uses HTTP Basic Auth with API Key (username) and API Secret (password)
+  local credentials = username .. ":" .. password
+  auth_header = "Basic " .. base64encode(credentials)
 
   MM.printStatus("Cleaning up local cache")
   CleanupCache()
@@ -407,5 +425,3 @@ end
 function EndSession()
   -- Logout - nothing to do.
 end
-
--- SIGNATURE: MCwCFECsBiVxvZZddOKACvZgjMgGYwWBAhQvIt29L3MhiL5+RAFwfoMLwr7V5w==
