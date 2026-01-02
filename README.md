@@ -4,10 +4,11 @@ Download the `.lua` file and put it in your Extensions directory: https://moneym
 
 Get a Trading 212 API key: https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-How-can-I-generate-an-API-key
 
-The key needs all read scopes.
+The key needs all read scopes. You will receive both an **API Key** and an **API Secret**.
 
-Add an account of type "Trading 212" in MoneyMoney, enter your API key as your username and anything as password.
-If you have a new enough version of MoneyMoney, it will ask for the API key directly.
+Add an account of type "Trading 212" in MoneyMoney:
+- Enter your **API Key** as the username
+- Enter your **API Secret** as the password
 
 ### Caveats
 
