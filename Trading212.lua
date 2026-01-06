@@ -20,7 +20,7 @@
 --
 
 WebBanking{
-  version     = 0.41,
+  version     = 0.42,
   url         = "https://trading212.com/",
   services    = { "Trading 212" },
   description = "Trading 212"
@@ -28,22 +28,6 @@ WebBanking{
 
 local connection = Connection()
 local auth_header
-
--- Base64 encoding for Basic Auth
-local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-
-function base64encode(data)
-  return ((data:gsub('.', function(x)
-    local r, b = '', x:byte()
-    for i = 8, 1, -1 do r = r .. (b % 2 ^ i - b % 2 ^ (i - 1) > 0 and '1' or '0') end
-    return r
-  end) .. '0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
-    if #x < 6 then return '' end
-    local c = 0
-    for i = 1, 6 do c = c + (x:sub(i, i) == '1' and 2 ^ (6 - i) or 0) end
-    return b64chars:sub(c + 1, c + 1)
-  end) .. ({ '', '==', '=' })[#data % 3 + 1])
-end
 
 -- Helpers
 
@@ -83,14 +67,11 @@ end
 
 -- Memoization
 function Cached(key, ttl, updateFunction, ...)
-  if not LocalStorage[auth_header] then
-    LocalStorage[auth_header] = {}
-  end
-  if not LocalStorage[auth_header][key] then
-    LocalStorage[auth_header][key] = {}
+  if not LocalStorage[key] then
+    LocalStorage[key] = {}
   end
 
-  local cacheEntry = LocalStorage[auth_header][key]
+  local cacheEntry = LocalStorage[key]
   local cachedData = cacheEntry.data
   local expirationTime = cacheEntry.expires_at
   if cachedData and expirationTime and os.time() < expirationTime then
@@ -103,25 +84,6 @@ function Cached(key, ttl, updateFunction, ...)
   cacheEntry.expires_at = os.time() + ttl
 
   return updatedData
-end
-
-function CleanupCache()
-  local currentTime = os.time()
-
-  for api_key, scoped_cache in pairs(LocalStorage) do
-    print("Cleanup - Checking API key: " .. api_key)
-    for key, cacheEntry in pairs(scoped_cache) do
-      print("Cleanup - Checking key: " .. key)
-      if type(cacheEntry) == "table" and ((cacheEntry.expires_at and currentTime >= cacheEntry.expires_at) or (not cacheEntry.expires_at)) then
-        print("Cleanup - Expiring key: " .. key)
-        LocalStorage[api_key][key] = nil
-      end
-    end
-    if next(LocalStorage[api_key]) == nil then
-      print("Cleanup - Expiring API key " .. api_key)
-      LocalStorage[api_key] = nil
-    end
-  end
 end
 
 -- API wrapper with exponential backoff
@@ -321,11 +283,17 @@ end
 
 function InitializeSession(protocol, bankCode, username, reserved, password)
   -- Trading212 API uses HTTP Basic Auth with API Key (username) and API Secret (password)
-  local credentials = username .. ":" .. password
-  auth_header = "Basic " .. base64encode(credentials)
+  -- Support "key:secret" format in username field for single-field input
+  local api_key, api_secret
+  if (password == nil or password == "") and string.find(username, ":") then
+    api_key, api_secret = string.match(username, "([^:]+):(.+)")
+  else
+    api_key = username
+    api_secret = password
+  end
 
-  MM.printStatus("Cleaning up local cache")
-  CleanupCache()
+  local credentials = api_key .. ":" .. api_secret
+  auth_header = "Basic " .. MM.base64(credentials)
 
   MM.printStatus("Getting account information")
   Cached("account_info", 86400, FetchAccountInfo)
