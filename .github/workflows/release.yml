@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify signature is present
         run: |
@@ -31,6 +33,8 @@ jobs:
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v4
         with:
+          fetchReviewers: false
+          fetchReleaseInformation: true
           configuration: |
             {
               "categories": [
