@@ -27,10 +27,57 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Build Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: |
+            {
+              "categories": [
+                {
+                  "title": "## 🚀 Features",
+                  "labels": [],
+                  "rules": [{"pattern": "^feat", "on_property": "subject"}]
+                },
+                {
+                  "title": "## 🐛 Fixes",
+                  "labels": [],
+                  "rules": [{"pattern": "^fix", "on_property": "subject"}]
+                },
+                {
+                  "title": "## 📚 Documentation",
+                  "labels": [],
+                  "rules": [{"pattern": "^docs", "on_property": "subject"}]
+                },
+                {
+                  "title": "## 🔧 Maintenance",
+                  "labels": [],
+                  "rules": [{"pattern": "^(chore|refactor|ci)", "on_property": "subject"}]
+                },
+                {
+                  "title": "## 🔀 Other Changes",
+                  "labels": []
+                }
+              ],
+              "template": "#{{CHANGELOG}}",
+              "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
+              "commit_template": "- #{{TITLE}} (#{{SHA}})",
+              "empty_template": "- No changes",
+              "max_pull_requests": 100,
+              "max_back_track_time_days": 365,
+              "transformers": [
+                {
+                  "pattern": "^(feat|fix|docs|chore|refactor|ci):\\s*(.*)$",
+                  "target": "$2"
+                }
+              ]
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          generate_release_notes: true
           files: |
             Trading212.lua
           body: |
@@ -46,6 +93,6 @@ jobs:
 
             ### Changes
 
-            See the automatically generated changelog below.
+            ${{ steps.changelog.outputs.changelog }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
