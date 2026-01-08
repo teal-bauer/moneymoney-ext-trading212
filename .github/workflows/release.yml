@@ -35,6 +35,7 @@ jobs:
         with:
           fetchReviewers: false
           fetchReleaseInformation: true
+          commitMode: true
           configuration: |
             {
               "categories": [
