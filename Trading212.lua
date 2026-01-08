@@ -407,3 +407,5 @@ end
 function EndSession()
   -- Logout - nothing to do.
 end
+
+-- SIGNATURE: MCwCFCmEDH/vHy/NtFKIGGHGjiq0ZUEAAhQO2IQUehRqL2OWzhpjf/h2O/WcDA==
