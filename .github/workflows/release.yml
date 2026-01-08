@@ -1,0 +1,70 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify signature is present
+        run: |
+          if ! grep -q "^-- SIGNATURE:" Trading212.lua; then
+            echo "Error: Trading212.lua is missing the required signature"
+            exit 1
+          fi
+          echo "✓ Signature verified in Trading212.lua"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Changelog
+        id: changelog
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.version }}$" | head -n1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found, using all commits"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "Generating changelog from $PREV_TAG to ${{ steps.version.outputs.version }}"
+            CHANGELOG=$(git log ${PREV_TAG}..${{ steps.version.outputs.version }} --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Save to output
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            Trading212.lua
+          body: |
+            ## MoneyMoney Extension for Trading 212
+
+            Version: ${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            1. Download `Trading212.lua` from the assets below
+            2. In MoneyMoney: `Help → Show Database in Finder`
+            3. Place the file in the `Extensions` folder
+
+            ### Changes
+
+            ${{ steps.changelog.outputs.changelog }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
