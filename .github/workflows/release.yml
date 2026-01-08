@@ -31,54 +31,21 @@ jobs:
 
       - name: Build Changelog
         id: changelog
-        uses: mikepenz/release-changelog-builder-action@v4
-        with:
-          fetchReviewers: false
-          fetchReleaseInformation: true
-          commitMode: true
-          configuration: |
-            {
-              "categories": [
-                {
-                  "title": "## 🚀 Features",
-                  "labels": [],
-                  "rules": [{"pattern": "^feat", "on_property": "subject"}]
-                },
-                {
-                  "title": "## 🐛 Fixes",
-                  "labels": [],
-                  "rules": [{"pattern": "^fix", "on_property": "subject"}]
-                },
-                {
-                  "title": "## 📚 Documentation",
-                  "labels": [],
-                  "rules": [{"pattern": "^docs", "on_property": "subject"}]
-                },
-                {
-                  "title": "## 🔧 Maintenance",
-                  "labels": [],
-                  "rules": [{"pattern": "^(chore|refactor|ci)", "on_property": "subject"}]
-                },
-                {
-                  "title": "## 🔀 Other Changes",
-                  "labels": []
-                }
-              ],
-              "template": "#{{CHANGELOG}}",
-              "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
-              "commit_template": "- #{{TITLE}} (#{{SHA}})",
-              "empty_template": "- No changes",
-              "max_pull_requests": 100,
-              "max_back_track_time_days": 365,
-              "transformers": [
-                {
-                  "pattern": "^(feat|fix|docs|chore|refactor|ci):\\s*(.*)$",
-                  "target": "$2"
-                }
-              ]
-            }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.version }}$" | head -n1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found, using all commits"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "Generating changelog from $PREV_TAG to ${{ steps.version.outputs.version }}"
+            CHANGELOG=$(git log ${PREV_TAG}..${{ steps.version.outputs.version }} --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Save to output
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
